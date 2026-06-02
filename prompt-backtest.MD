@@ -1,12 +1,12 @@
-# QuantCell SMC 回测 Prompt
+# QuantCell 策略回测 Prompt
 
-基于 grill-with-docs 决策会议生成的最终回测执行指南。
+基于 grill-with-docs 决策会议 + 性能优化生成的最终回测执行指南。
 
 ---
 
 ## 目标
 
-将 TradingView Pine Script 策略 (DeFiers-SMC Strategy v0.4.0) 转写为 Python，在本地运行回测。
+将所有非 NautilusTrader 格式的策略转写为 Python，在本地运行回测。
 
 ---
 
@@ -14,11 +14,22 @@
 
 | 决策项 | 选择 | 理由 |
 |--------|------|------|
-| 策略迁移 | Pine → Python 完整实现 | 保持功能完整性 |
+| 策略迁移 | 所有非 NautilusTrader 格式 → Python | 通用性 |
 | 数据+回测 | 只用历史数据模拟，不用实盘 | 符合需求 |
-| 回测引擎 | 自研 Python 引擎 (向量化指标) | 性能 ~83K bars/sec |
+| 回测引擎 | 向量化引擎 (~570K bars/sec) | 性能最优 |
 | 数据源 | 本地 Parquet (JasonleeQAQ/multi-asset-ohlcv) | 用户已手动 git lfs 下载 |
 | 回测周期 | 全量 2017-08 ~ 2026-01 | 最完整 |
+
+---
+
+## 性能优化 (v2.0)
+
+| 优化项 | 原版 | 优化后 | 提升 |
+|--------|------|--------|------|
+| 指标计算 | 逐 bar 循环 | NumPy 向量化 | 7x |
+| 回测引擎 | 逐 bar 循环 | 向量化 + 逐 bar 混合 | 10-50x |
+| 全量回测 | 30-40 分钟 | **4.8 分钟** | **6-8x** |
+| 数据加载 | pandas 逐文件 | DuckDB 可选 | 10-50x |
 
 ---
 
@@ -42,36 +53,23 @@
 ### Parquet 文件路径格式
 
 ```
-cloud_bundle/
-├── BTCUSDTraw_data/ohlcv/
-│   ├── 1m/BTCUSDT_1m_ohlcv_YYYY-MM.parquet
-│   ├── 15m/BTCUSDT_15m_ohlcv_YYYY-MM.parquet
-│   └── 1h/BTCUSDT_1h_ohlcv_YYYY-MM.parquet
-├── ETHUSDTraw_data/ohlcv/
-└── ...
+cloud_bundle/BTCUSDTraw_data/ohlcv/1m/BTCUSDT_1m_ohlcv_YYYY-MM.parquet
 ```
 
 ---
 
-## SMC 策略配置
-
-### 核心参数
+## 策略参数 (优化后)
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `entry_threshold` | 65 | 最小 Score (0-100) |
-| `require_factors` | 3 | 最少活跃因子数 (1-5) |
-| `swing_len` | 10 | 枢轴检测长度 |
-| `vol_mult` | 1.5 | OB 成交量倍数 |
-| `fvg_min_atr` | 0.5 | FVG 最小 ATR |
-| `ob_max_age` | 60 | OB 最大年龄 (bars) |
-| `liq_range_pct` | 0.15 | 流动性容差 (%) |
-| `sl_buffer_atr` | 0.5 | 止损 ATR 缓冲 |
-| `rr_tp1` | 1.5 | TP1 R:R |
-| `rr_tp2` | 3.0 | TP2 R:R |
-| `risk_pct` | 2.0 | 每笔风险 (%) |
-| `use_trailing` | True | 启用追踪止损 |
-| `use_early_be` | True | 启用提前 Break-Even |
+| entry_threshold | 65 | 最小 Score (0-100) |
+| require_factors | 3 | 最少活跃因子 (1-5) |
+| swing_len | 10 | 枢轴检测长度 |
+| vol_mult | 1.5 | OB 成交量倍数 |
+| rr_tp1 | **1.2** | TP1 R:R (优化: 1.5→1.2) |
+| rr_tp2 | **2.5** | TP2 R:R (优化: 3.0→2.5) |
+| risk_pct | 2.0% | 每笔风险 |
+| sl_buffer_atr | 0.5 | 止损 ATR 缓冲 |
 
 ### 5 因子 Smart Money Score
 
@@ -103,17 +101,30 @@ max_tokens = 8192
 
 ---
 
+## 回测结果参考 (2017-08 ~ 2026-01)
+
+**最佳表现 (1h 周期)**:
+| 币种 | 交易 | 胜率 | 盈亏比 | 回撤 | 收益 |
+|------|------|------|--------|------|------|
+| SOLUSDT | 374 | 30.7% | 1.60 | 10.1% | +200.5% |
+| ETHUSDT | 701 | 29.1% | 1.46 | 14.1% | +284.6% |
+| BNBUSDT | 606 | 27.6% | 1.37 | 21.5% | +195.7% |
+| BTCUSDT | 671 | 25.9% | 1.20 | 34.1% | +115.8% |
+
+**注意**: 1m 周期回撤过大，不推荐用于当前策略
+
+---
+
 ## 输出文件
 
 ### 回测报告 (HTML)
 
-- 路径: `smc_backtest/smc_backtest_report.html`
+- 路径: `smc_backtest/smc_backtest_report_optimized.html`
 - 包含: 回测汇总表 + 交易明细 (可筛选)
-- 大小: ~7-10MB
 
 ### 交易日志 (CSV)
 
-- 路径: `smc_backtest/trades.csv`
+- 路径: `smc_backtest/trades_optimized.csv`
 - 字段: symbol, interval, trade_num, entry_time, entry_price, exit_time, exit_price, direction, size, pnl, pnl_pct, exit_reason, score, factors
 
 ---
@@ -123,18 +134,18 @@ max_tokens = 8192
 ```
 smc_backtest/
 ├── strategies/
-│   ├── indicators.py    # SMC 向量化指标 (NumPy/Pandas)
-│   └── smc_strategy.py  # 策略 + 回测引擎
+│   ├── indicators.py      # 向量化指标 (~570K bars/sec)
+│   └── smc_strategy.py    # 逐 bar 回测引擎
 ├── data/
-│   └── parquet_loader.py  # Parquet 数据加载
+│   ├── parquet_loader.py  # Parquet 加载
+│   └── duckdb_loader.py   # DuckDB 加速加载 (可选)
 ├── engine/
-│   ├── backtest_runner.py  # 批量回测
-│   └── report_generator.py # HTML 报告
-├── tests/
-│   └── test_smc.py
-├── main.py              # 入口
-├── run_quick_backtest.py  # 快速回测 (2024-01 ~ 2025-01)
-└── run_full_backtest.py   # 完整回测 (2017-08 ~ 2026-01)
+│   ├── vector_engine.py   # 向量化回测引擎 (推荐)
+│   ├── parallel_runner.py # 并行回测 (可选)
+│   └── report_generator.py
+├── run_optimized_backtest.py  # 优化版全量回测 (推荐)
+├── run_quick_backtest.py      # 快速回测 (1年)
+└── run_full_backtest.py       # 原版全量回测
 ```
 
 ---
@@ -144,16 +155,21 @@ smc_backtest/
 ```bash
 cd smc_backtest
 
-# 初始化 (如需要)
-uv init --python 3.12
-uv add pandas pyarrow polars duckdb numpy
+# 优化版全量回测 (~5 分钟)
+uv run python run_optimized_backtest.py
 
-# 运行快速回测 (1年数据)
+# 快速回测 (1年数据)
 uv run python run_quick_backtest.py
-
-# 查看报告
-open smc_backtest_report.html
 ```
+
+---
+
+## 硬件建议
+
+| 配置 | 4核6GB (当前) | 8核16GB (推荐) | 16核32GB (生产) |
+|------|--------------|----------------|-----------------|
+| 全量回测 | ~5 分钟 | ~3 分钟 | ~1.5 分钟 |
+| 1000 策略 | ~80 小时 | ~40 小时 | ~20 小时 |
 
 ---
 
@@ -162,5 +178,6 @@ open smc_backtest_report.html
 1. **不用 Docker**
 2. **不用滚动窗口回测** (当前版本)
 3. **不用蒙特卡洛模拟** (当前版本)
-4. **只测试一个策略** (DeFiers-SMC)
+4. **只测试一个策略** (可扩展)
 5. **先用 MiniMax 测试 LLM 调用，如失败查文档再失败则停**
+6. **1m 周期回撤大，建议用 15m/1h**
