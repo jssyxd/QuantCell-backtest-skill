@@ -8,23 +8,19 @@ description: |
   - 用户提到 SMC (Smart Money Concepts) 策略
   - 用户需要回测加密货币 (BTC/ETH/BNB/SOL) 在 1m/15m/1h 周期
   - 用户提到 QuantCell 项目或量化回测
-  - 用户需要生成 HTML 回测报告
+  - 用户需要生成独立 HTML 报告 (回测报告 + 交易记录)
   - 用户提到本地 Parquet 数据或 JasonleeQAQ/multi-asset-ohlcv
   - 用户有 TradingView/MT4/MT5 等格式策略需要转写
-  - 用户有自定义策略格式需要适配
   
   当用户说"回测"、"backtest"、"SMC"、"Smart Money"、"Pine Script 转 Python"、
-  "加密货币策略"、"QuantCell"、"策略转写"、"strategy conversion"时立即激活此技能。
-  
-  支持的策略格式: Pine Script, MQL4/MQL5, TradingView, 财经公式, 自定义 Python/JS 等
-  转写目标: Python 向量化策略 + 本地回测引擎
+  "加密货币策略"、"QuantCell"、"策略转写"时立即激活此技能。
 ---
 
 # QuantCell 策略回测技能
 
 ## 核心任务
 
-将所有非 NautilusTrader 格式的策略转写为 Python，运行本地回测。
+将所有非 NautilusTrader 格式的策略转写为 Python，为每个策略生成独立的 HTML 回测报告。
 
 ## 架构决策 (已确定)
 
@@ -32,96 +28,85 @@ description: |
 |--------|------|
 | 策略迁移 | 所有非 NautilusTrader 格式 → Python |
 | 数据+回测 | 只用历史数据，不用实盘 |
-| 回测引擎 | 向量化引擎 (~570K bars/sec) |
-| 数据加载 | Parquet (pandas) 或 DuckDB (加速) |
-| 数据源 | JasonleeQAQ/multi-asset-ohlcv |
+| 回测引擎 | 向量化引擎 |
+| 数据源 | JasonleeQAQ/multi-asset-ohlcv (Parquet) |
 | 币种 | BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT |
-| 周期 | 1m, 15m, 1h |
+| 周期 | 1h, 15m |
 | 数据范围 | 2017-08 ~ 2026-01 |
 
-## 性能优化 (v2.0)
+## 性能优化
 
 | 优化项 | 效果 |
 |--------|------|
-| 向量化指标计算 | ~83K → ~570K bars/sec (7x) |
-| 向量化回测引擎 | 逐 bar → 向量化 (10-50x) |
-| 全量回测耗时 | 30+ 分钟 → **4.8 分钟** |
-| DuckDB 数据加载 | 可选，比 pandas 快 10-50x |
-| 并行回测 | 可选，多核并行 |
+| 向量化引擎 | ~500K bars/sec |
+| 全量回测 | 10 策略 × 8 组合 ≈ 2 分钟 |
 
 ## 数据配置
 
 数据路径: `/home/da/桌面/multi-asset-ohlcv/cloud_bundle/`
 
-数据来源: 手动从 https://github.com/JasonleeQAQ/multi-asset-ohlcv git lfs 下载
+数据来源: https://github.com/JasonleeQAQ/multi-asset-ohlcv (git lfs)
 
-Parquet 文件格式:
-```
-cloud_bundle/BTCUSDTraw_data/ohlcv/1m/BTCUSDT_1m_ohlcv_YYYY-MM.parquet
-```
+## 手续费配置
 
-## 策略参数 (优化后)
+| 类型 | 费率 |
+|------|------|
+| Taker (吃单) | 0.05% |
+| Maker (挂单) | 0.02% |
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| entry_threshold | 65 | 最小 Score (0-100) |
-| require_factors | 3 | 最少活跃因子 (1-5) |
-| swing_len | 10 | 枢轴检测长度 |
-| vol_mult | 1.5 | OB 成交量倍数 |
-| rr_tp1 | **1.2** | TP1 R:R (优化: 1.5→1.2) |
-| rr_tp2 | **2.5** | TP2 R:R (优化: 3.0→2.5) |
-| risk_pct | 2.0% | 每笔风险 |
-| sl_buffer_atr | 0.5 | 止损 ATR 缓冲 |
+## 初始资金
 
-## 回测结果参考 (2017-08 ~ 2026-01)
+**1000U**
 
-**最佳表现 (1h 周期)**:
-| 币种 | 交易 | 胜率 | 盈亏比 | 回撤 | 收益 |
-|------|------|------|--------|------|------|
-| SOLUSDT | 374 | 30.7% | 1.60 | 10.1% | +200.5% |
-| ETHUSDT | 701 | 29.1% | 1.46 | 14.1% | +284.6% |
-| BNBUSDT | 606 | 27.6% | 1.37 | 21.5% | +195.7% |
-| BTCUSDT | 671 | 25.9% | 1.20 | 34.1% | +115.8% |
+## HTML 报告功能
 
-**注意**: 1m 周期回撤过大，不推荐用于当前策略
-
-## 输出
-
-1. **HTML 回测报告**: 包含汇总表 + 交易明细 (可筛选)
-2. **CSV 交易日志**: 所有交易记录
+每个策略生成独立的 HTML 文件，包含:
+- 回测汇总统计
+- 权益曲线图
+- 完整交易记录 (可筛选/搜索)
+- 交易记录包含:
+  - 初始资金 (1000U)
+  - 入场/出场时间 (UTC+0)
+  - 对应价格
+  - 手续费 (入/出场)
+  - 操作逻辑
+  - 净收益/收益率
 
 ## 项目结构
 
 ```
 smc_backtest/
-├── strategies/
-│   ├── indicators.py      # 向量化指标 (~570K bars/sec)
-│   └── smc_strategy.py    # 逐 bar 回测引擎
-├── data/
-│   ├── parquet_loader.py  # Parquet 加载
-│   └── duckdb_loader.py   # DuckDB 加速加载 (可选)
-├── engine/
-│   ├── vector_engine.py   # 向量化回测引擎 (推荐)
-│   ├── parallel_runner.py # 并行回测 (可选)
-│   └── report_generator.py
-├── run_optimized_backtest.py  # 优化版全量回测 (推荐)
-├── run_quick_backtest.py      # 快速回测 (1年)
-└── run_full_backtest.py       # 原版全量回测
+├── strategies/          # 策略模块
+├── data/               # 数据加载
+│   ├── parquet_loader.py
+│   └── duckdb_loader.py
+├── engine/             # 回测引擎
+│   ├── backtest_engine_v3.py   # 标准回测引擎
+│   ├── vector_engine.py        # 向量化引擎
+│   ├── individual_report.py   # HTML 报告生成
+│   └── parallel_runner.py     # 并行回测
+├── reports/            # 生成的报告 (*.html)
+├── run_batch_backtest.py      # 批量回测 (推荐)
+└── run_optimized_backtest.py  # 单策略全量回测
 ```
 
 ## 快速开始
 
 ```bash
 cd smc_backtest
-uv run python run_optimized_backtest.py
+
+# 批量回测 (10 策略 × 8 组合 ≈ 2 分钟)
+uv run python run_batch_backtest.py
+
+# 查看报告
+open reports/*.html
 ```
 
 ## 硬件建议
 
-| 配置 | 4核6GB (当前) | 8核16GB (推荐) | 16核32GB (生产) |
-|------|--------------|----------------|-----------------|
-| 全量回测 | ~5 分钟 | ~3 分钟 | ~1.5 分钟 |
-| 1000 策略 | ~80 小时 | ~40 小时 | ~20 小时 |
+| 配置 | 4核6GB (当前) | 8核16GB (推荐) |
+|------|--------------|-----------------|
+| 10 策略全量 | ~2 分钟 | ~1 分钟 |
 
 ## 注意事项
 
@@ -129,4 +114,3 @@ uv run python run_optimized_backtest.py
 - 不用滚动窗口回测
 - 不用蒙特卡洛模拟
 - LLM 测试: MiniMax → 文档 → 用户求助
-- 1m 周期回撤大，建议用 15m/1h
